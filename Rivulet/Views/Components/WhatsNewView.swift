@@ -155,6 +155,9 @@ struct WhatsNewView: View {
     // MARK: - Changelog Data
 
     static let changelogs: [(version: String, features: [String])] = [
+        ("1.2.0 (123)", [
+            "Updated AetherEngine to 7.58.0",
+        ]),
         ("1.2.0 (121)", [
             "> Thanks for the bugs, support, and PRs! I'm on vacation this week, so these are tested on a simulator but not a real Apple TV.",
             "Trailers options in Playback",
