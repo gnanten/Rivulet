@@ -132,8 +132,13 @@ enum ProviderPlayer {
             return
         }
         guard claimStart() else { return }
+        // Stream resolve can take a few seconds; show feedback until the player opens.
+        PlayStartingOverlay.show(on: presenter)
         Task { @MainActor in
-            defer { finishStart() }
+            defer {
+                PlayStartingOverlay.hide()
+                finishStart()
+            }
             var target = item
             if item.kind == .show || item.kind == .season {
                 target = await EpisodePicker.resolvePlayTarget(for: item, provider: provider) ?? item
@@ -153,6 +158,7 @@ enum ProviderPlayer {
                         startOffset: plexStartOffset(metadata, fromBeginning: fromBeginning),
                         playQueue: playQueue,
                         loadingArtImage: art, loadingThumbImage: thumb, preferredMediaID: sourceID)
+                    PlayStartingOverlay.hide()
                     PlayerPresenter.present(viewModel: viewModel, from: presenter, onDismiss: onDismiss)
                 } catch {
                     presentError(MediaProviderError.mapping(error), from: presenter)
@@ -171,6 +177,7 @@ enum ProviderPlayer {
                     loadingArtImage: art,
                     loadingThumbImage: thumb,
                     preferredMediaID: sourceID)
+                PlayStartingOverlay.hide()
                 PlayerPresenter.present(viewModel: viewModel, from: presenter, onDismiss: onDismiss)
             } catch {
                 presentError(error, from: presenter)
@@ -194,5 +201,41 @@ enum ProviderPlayer {
             title: String(localized: "Couldn't Play"), message: errorMessage(for: error),
             confirmTitle: String(localized: "OK"), cancelTitle: nil, onConfirm: {})
         presenter.topmostPresented.present(popup, animated: true)
+    }
+}
+
+/// Dim + spinner over the current screen while `ProviderPlayer` resolves a stream.
+@MainActor
+private enum PlayStartingOverlay {
+    private static weak var overlay: UIView?
+
+    static func show(on presenter: UIViewController) {
+        hide()
+        guard let host = presenter.topmostPresented.view else { return }
+        let cover = UIView()
+        cover.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        cover.translatesAutoresizingMaskIntoConstraints = false
+        cover.isAccessibilityElement = true
+        cover.accessibilityLabel = String(localized: "Loading")
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.color = .white
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.startAnimating()
+        cover.addSubview(spinner)
+        host.addSubview(cover)
+        NSLayoutConstraint.activate([
+            cover.topAnchor.constraint(equalTo: host.topAnchor),
+            cover.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            cover.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            cover.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            spinner.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
+        ])
+        overlay = cover
+    }
+
+    static func hide() {
+        overlay?.removeFromSuperview()
+        overlay = nil
     }
 }
