@@ -293,6 +293,26 @@ actor CacheManager {
         return decodedCache(for: homeItemsCacheFile, as: CachedHomeRail.self)
     }
 
+    /// Jellyfin / Emby / extra-Plex Home rows (`ServerDataStore`), separate from
+    /// the selected Plex server's `home_items_cache_v3`.
+    private let serverHomeItemsCacheFile = "server_home_items_cache_v1.json"
+
+    func cacheServerHomeItems(_ rail: CachedHomeRail) {
+        cacheData(rail, fileName: serverHomeItemsCacheFile)
+    }
+
+    func getCachedServerHomeItems() -> CachedHomeRail? {
+        decodedCache(for: serverHomeItemsCacheFile, as: CachedHomeRail.self)
+    }
+
+    func clearServerHomeItemsCache() {
+        guard let cacheDir = cacheDirectory else { return }
+        let fileURL = cacheDir.appendingPathComponent(serverHomeItemsCacheFile)
+        try? FileManager.default.removeItem(at: fileURL)
+        memoryCache.removeObject(forKey: serverHomeItemsCacheFile as NSString)
+        removeTimestamp(for: serverHomeItemsCacheFile)
+    }
+
     func cacheHomeHeroItems(_ items: [PlexMetadata]) {
         cacheData(items, fileName: homeHeroItemsCacheFile)
     }
@@ -332,6 +352,7 @@ actor CacheManager {
             hubsCacheFile,
             homeItemsCacheFile,
             homeHeroItemsCacheFile,
+            serverHomeItemsCacheFile,
             cacheInfoFile
         ]
 

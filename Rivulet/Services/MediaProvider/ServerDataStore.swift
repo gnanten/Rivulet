@@ -8,8 +8,9 @@
 //  What the browse surfaces show from every server beside the selected Plex
 //  one (the account's other Plex servers, each other kind's server): their libraries (sidebar,
 //  Settings) and their Home rows. The counterpart of PlexDataStore's library
-//  list and Home projection, without disk caches. Rows are never merged across
-//  servers; each server's sit together, in `sources` order.
+//  list and Home projection. Home rows paint from disk on launch
+//  (`server_home_items_cache_v1`), then refresh from the network. Rows are
+//  never merged across servers; each server's sit together, in `sources` order.
 //
 
 import Combine
@@ -71,12 +72,24 @@ final class ServerDataStore: ObservableObject {
         if !PlexUserProfileManager.shared.isRestrictedProfile {
             sources = OtherServerKind.all.compactMap { $0.account().map { Source(providerID: $0.providerID, name: $0.name) } }
         }
+        // Launch paint from disk (CacheManager is an actor — cannot await in init).
+        if !sources.isEmpty {
+            let ids = Set(sources.map(\.providerID))
+            Task { await self.paintHomeRowsFromCache(providerIDs: ids) }
+        }
         // Watch-state changes (detail page, tile menus, playback) post this.
         refreshObserver = NotificationCenter.default.addObserver(
             forName: .plexDataNeedsRefresh, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reload() }
         }
+    }
+
+    /// Disk → `homeRows` when still empty (network has not won the race yet).
+    private func paintHomeRowsFromCache(providerIDs: Set<String>) async {
+        guard homeRows.isEmpty,
+              let cached = await CacheManager.shared.getCachedServerHomeItems(), !cached.isEmpty else { return }
+        homeRows = cached.filter { providerIDs.contains($0.providerID) }
     }
 
     var isSignedIn: Bool { !sources.isEmpty }
@@ -93,11 +106,17 @@ final class ServerDataStore: ObservableObject {
         let providerIDs = sources.map(\.providerID)
             + Set(homeRows.map(\.providerID)).subtracting(sources.map(\.providerID)).sorted()
         return providerIDs.flatMap { providerID in
-            homeRows.filter { $0.isContinueWatching && $0.providerID == providerID }
-                + visible.filter { $0.providerID == providerID }.compactMap { library in
+            let continuing = homeRows.filter { $0.isContinueWatching && $0.providerID == providerID }
+            let libs = visible.filter { $0.providerID == providerID }
+            // Libraries load after the row cache: keep cached Recently Added
+            // until the sidebar list arrives, then order by it.
+            let recent: CachedHomeRail = libs.isEmpty
+                ? homeRows.filter { !$0.isContinueWatching && $0.providerID == providerID }
+                : libs.compactMap { library in
                     let id = Self.rowID(providerID, "\(library.id).recentlyAdded")
                     return homeRows.first { $0.id == id }
                 }
+            return continuing + recent
         }
     }
 
@@ -266,9 +285,24 @@ final class ServerDataStore: ObservableObject {
         let ordered = order.compactMap { slices[$0] }
         update(\.libraries, ordered.flatMap(\.libraries))
         update(\.trending, ordered.reduce(into: [:]) { $0.merge($1.trending) { a, _ in a } })
-        let rows = ordered.flatMap(\.rows)
+        // A server still loading has no slice yet — keep its current (often
+        // disk-cached) rows so the first finisher does not wipe the others.
+        let rows = order.flatMap { id -> CachedHomeRail in
+            if let slice = slices[id] { return slice.rows }
+            return homeRows.filter { $0.providerID == id }
+        }
         guard !(rows.isEmpty && homeRows.isEmpty) else { return }
         homeRows = rows
+        if self === Self.shared {
+            let snapshot = rows
+            Task {
+                if snapshot.isEmpty {
+                    await CacheManager.shared.clearServerHomeItemsCache()
+                } else {
+                    await CacheManager.shared.cacheServerHomeItems(snapshot)
+                }
+            }
+        }
         refreshTopShelf()
     }
 

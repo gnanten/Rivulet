@@ -91,14 +91,14 @@ final class JellyfinMediaMapperTests: XCTestCase {
         XCTAssertEqual(libs.map(\.id), ["a", "b", "c"])
     }
 
-    /// #507: a Music Videos library browses by folder and its videos list; Books stay out.
-    func test_musicVideos_browseAsVideoFolders() throws {
+    /// #507: Music Videos stay a video library (posters); Books stay out.
+    func test_musicVideos_browseAsVideoLibrary() throws {
         let view = { (type: String) -> JFItem in
             JellyfinFixtures.decode(#"{"Id":"v","Name":"Clips","CollectionType":"\#(type)"}"#)
         }
         let library = try XCTUnwrap(JellyfinMediaMapper.library(view("musicvideos"), providerID: pid))
         XCTAssertEqual(library.kind, .mixed)
-        XCTAssertTrue(library.browsesByFolder)
+        XCTAssertFalse(library.browsesByFolder)
         XCTAssertNil(JellyfinMediaMapper.library(view("books"), providerID: pid))
 
         let clip: JFItem = JellyfinFixtures.decode(#"{"Id":"c","Name":"Song","Type":"MusicVideo"}"#)
