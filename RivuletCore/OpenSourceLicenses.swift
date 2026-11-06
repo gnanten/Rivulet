@@ -120,7 +120,7 @@ enum OpenSourceLicenses {
             ),
             Entry(
                 name: "LibTrueHD",
-                summary: "Used to keep the height channels of Dolby TrueHD Atmos soundtracks. LibTrueHD 3.1.0, used under the MIT License. It includes the truehd and oamd crates from the truehdd project (https://github.com/truehdd/truehdd), Copyright © Rainbaby and the truehdd contributors, used under the Apache License, Version 2.0. Source: https://github.com/superuser404notfound/LibTrueHD (tag 3.1.0).",
+                summary: "Used to keep the height channels of Dolby TrueHD Atmos soundtracks. LibTrueHD 3.2.0, used under the MIT License. It includes the truehd and oamd crates from the truehdd project (https://github.com/truehdd/truehdd), Copyright © Rainbaby and the truehdd contributors, used under the Apache License, Version 2.0. Source: https://github.com/superuser404notfound/LibTrueHD (tag 3.2.0).",
                 licenseText: libTrueHDLicenses
             ),
             Entry(

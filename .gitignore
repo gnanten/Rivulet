@@ -112,3 +112,6 @@ Screenshots/AppStore/*
 # MCP server config — machine-specific, holds absolute local paths.
 .mcp.json
 .vscode/
+
+# Local package-resolve scratch
+.derivedDataResolve/
