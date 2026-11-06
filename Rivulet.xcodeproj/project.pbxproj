@@ -1046,6 +1046,12 @@
 				kind = exactVersion;
 				version = 7.57.0;
 			};
+			traits = (
+				DualLayerDolbyVision,
+				DolbyVisionStillReshaping,
+				TrueHDObjectAudio,
+				DTSXObjectAudio,
+			);
 		};
 		B2000020AAAA000000000002 /* XCRemoteSwiftPackageReference "LibassBuild" */ = {
 			isa = XCRemoteSwiftPackageReference;
