@@ -8,9 +8,9 @@
 //  What the browse surfaces show from every server beside the selected Plex
 //  one (the account's other Plex servers, each other kind's server): their libraries (sidebar,
 //  Settings) and their Home rows. The counterpart of PlexDataStore's library
-//  list and Home projection. Home rows paint from disk on launch
-//  (`server_home_items_cache_v1`), then refresh from the network. Rows are
-//  never merged across servers; each server's sit together, in `sources` order.
+//  list and Home projection. Home rows and sidebar libraries paint from disk
+//  on launch, then refresh from the network. Rows are never merged across
+//  servers; each server's sit together, in `sources` order.
 //
 
 import Combine
@@ -75,7 +75,7 @@ final class ServerDataStore: ObservableObject {
         // Launch paint from disk (CacheManager is an actor — cannot await in init).
         if !sources.isEmpty {
             let ids = Set(sources.map(\.providerID))
-            Task { await self.paintHomeRowsFromCache(providerIDs: ids) }
+            Task { await self.paintFromCache(providerIDs: ids) }
         }
         // Watch-state changes (detail page, tile menus, playback) post this.
         refreshObserver = NotificationCenter.default.addObserver(
@@ -85,11 +85,16 @@ final class ServerDataStore: ObservableObject {
         }
     }
 
-    /// Disk → `homeRows` when still empty (network has not won the race yet).
-    private func paintHomeRowsFromCache(providerIDs: Set<String>) async {
-        guard homeRows.isEmpty,
-              let cached = await CacheManager.shared.getCachedServerHomeItems(), !cached.isEmpty else { return }
-        homeRows = cached.filter { providerIDs.contains($0.providerID) }
+    /// Disk → sidebar + Home when still empty (network has not won the race yet).
+    private func paintFromCache(providerIDs: Set<String>) async {
+        if libraries.isEmpty,
+           let cached = await CacheManager.shared.getCachedServerLibraries(), !cached.isEmpty {
+            libraries = cached.filter { providerIDs.contains($0.providerID) }
+        }
+        if homeRows.isEmpty,
+           let cached = await CacheManager.shared.getCachedServerHomeItems(), !cached.isEmpty {
+            homeRows = cached.filter { providerIDs.contains($0.providerID) }
+        }
     }
 
     var isSignedIn: Bool { !sources.isEmpty }
@@ -282,28 +287,47 @@ final class ServerDataStore: ObservableObject {
     /// listed (tests load providers directly) follows.
     private func publish() {
         let order = sources.map(\.providerID) + slices.keys.sorted().filter { id in !sources.contains { $0.providerID == id } }
-        let ordered = order.compactMap { slices[$0] }
-        update(\.libraries, ordered.flatMap(\.libraries))
-        update(\.trending, ordered.reduce(into: [:]) { $0.merge($1.trending) { a, _ in a } })
         // A server still loading has no slice yet — keep its current (often
-        // disk-cached) rows so the first finisher does not wipe the others.
+        // disk-cached) libraries/rows so the first finisher does not wipe others.
+        let libs = order.flatMap { id -> [MediaLibrary] in
+            if let slice = slices[id] { return slice.libraries }
+            return libraries.filter { $0.providerID == id }
+        }
         let rows = order.flatMap { id -> CachedHomeRail in
             if let slice = slices[id] { return slice.rows }
             return homeRows.filter { $0.providerID == id }
         }
-        guard !(rows.isEmpty && homeRows.isEmpty) else { return }
-        homeRows = rows
-        if self === Self.shared {
-            let snapshot = rows
-            Task {
-                if snapshot.isEmpty {
-                    await CacheManager.shared.clearServerHomeItemsCache()
-                } else {
-                    await CacheManager.shared.cacheServerHomeItems(snapshot)
+        var nextTrending: [String: [MediaItem]] = [:]
+        for id in order {
+            if let slice = slices[id] {
+                nextTrending.merge(slice.trending) { a, _ in a }
+            } else {
+                for (key, value) in trending where key.hasPrefix(id + "/") {
+                    nextTrending[key] = value
                 }
             }
         }
-        refreshTopShelf()
+        update(\.libraries, libs)
+        update(\.trending, nextTrending)
+        if !(rows.isEmpty && homeRows.isEmpty) {
+            homeRows = rows
+            refreshTopShelf()
+        }
+        guard self === Self.shared else { return }
+        let libSnapshot = libs
+        let rowSnapshot = homeRows
+        Task {
+            if libSnapshot.isEmpty {
+                await CacheManager.shared.clearServerLibrariesCache()
+            } else {
+                await CacheManager.shared.cacheServerLibraries(libSnapshot)
+            }
+            if rowSnapshot.isEmpty {
+                await CacheManager.shared.clearServerHomeItemsCache()
+            } else {
+                await CacheManager.shared.cacheServerHomeItems(rowSnapshot)
+            }
+        }
     }
 
     private func refreshTopShelf() {
