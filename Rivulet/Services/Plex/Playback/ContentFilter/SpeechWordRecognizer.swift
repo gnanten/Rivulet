@@ -56,8 +56,21 @@ final class SpeechModelStore: ObservableObject {
             .appendingPathComponent(folderName, isDirectory: true)
     }
 
+    /// True when Apple-hosted asset packs can be used. Sideloaded / free-team
+    /// installs (atvLoadly, Xcode run) have no App Store receipt; touching
+    /// `AssetPackManager.shared` there aborts the process — which is what
+    /// crashed Settings → Playback (it observes `SpeechModelStore.shared`).
+    nonisolated private static var assetPacksAvailable: Bool {
+        guard let url = Bundle.main.appStoreReceiptURL,
+              let data = try? Data(contentsOf: url), !data.isEmpty else {
+            return false
+        }
+        return true
+    }
+
     /// The model folder inside the asset pack, when the pack is on the device.
     nonisolated private static var packDirectory: URL? {
+        guard assetPacksAvailable else { return nil }
         guard let file = try? AssetPackManager.shared.url(for: FilePath("\(folderName)/config.json")) else { return nil }
         let folder = file.deletingLastPathComponent()
         return AsrModels.modelsExist(at: folder, version: version) ? folder : nil
@@ -68,7 +81,9 @@ final class SpeechModelStore: ObservableObject {
     private var download: Task<Void, Never>?
 
     private init() {
-        state = AsrModels.modelsExist(at: Self.directory, version: Self.version) ? .ready : .absent
+        // Only probe Caches here. `directory` can reach AssetPackManager, and
+        // that must not run during Settings setup on a sideloaded build.
+        state = AsrModels.modelsExist(at: Self.cacheDirectory, version: Self.version) ? .ready : .absent
     }
 
     var statusText: String {
@@ -122,6 +137,8 @@ final class SpeechModelStore: ObservableObject {
     }
 
     nonisolated private static func downloadPack(progress: @escaping @Sendable (Double) -> Void) async throws {
+        // Throw (don't return) so prepare()'s `try?` falls through to Hugging Face.
+        guard assetPacksAvailable else { throw URLError(.unsupportedURL) }
         let manager = AssetPackManager.shared
         let pack = try await manager.assetPack(withID: assetPackID)
         let updates = Task {
