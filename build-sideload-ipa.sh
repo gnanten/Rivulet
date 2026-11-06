@@ -119,4 +119,8 @@ echo "Unsigned IPA ready:"
 echo "  $ROOT/$IPA"
 ls -lh "$IPA"
 echo
-echo "In atvLoadly: open that IPA → sign with your burner Apple ID → install."
+echo "  (installing in 10 seconds)"
+sleep 10
+./install-sideload-ipa.sh
+echo "  (installed)"
+echo "==> Done!"
