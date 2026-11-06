@@ -24,17 +24,19 @@ final class FolderRoutingTests: XCTestCase {
         XCTAssertFalse(plex("photo", agent: "com.plexapp.agents.none").browsesByFolder)
     }
 
-    func test_jellyfinMixed_browsesByFolder() {
+    func test_jellyfinMixed_usesPosterLibrary() {
         let library = jellyfin(nil)
         XCTAssertEqual(library?.kind, .mixed)
-        XCTAssertEqual(library?.browsesByFolder, true)
+        XCTAssertEqual(library?.browsesByFolder, false)
+        XCTAssertEqual(jellyfin("mixed")?.browsesByFolder, false)
+        XCTAssertEqual(jellyfin("folders")?.browsesByFolder, false)
         XCTAssertEqual(jellyfin("movies")?.browsesByFolder, false)
     }
 
-    func test_jellyfinHomeVideos_withVideos_browsesByFolder() {
+    func test_jellyfinHomeVideos_withVideos_usesPosterLibrary() {
         let library = jellyfin("homevideos", .videos)
         XCTAssertEqual(library?.kind, .mixed)
-        XCTAssertEqual(library?.browsesByFolder, true)
+        XCTAssertEqual(library?.browsesByFolder, false)
     }
 
     func test_jellyfinHomeVideos_photosOnly_isPhotos() {

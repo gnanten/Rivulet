@@ -38,7 +38,8 @@ enum JellyfinMediaMapper {
         default: return nil
         }
         var library = MediaLibrary(id: id, providerID: providerID, title: view.name ?? "", kind: kind)
-        library.browsesByFolder = kind == .mixed
+        // Always the poster library page — never the folder (text) browser.
+        library.browsesByFolder = false
         return library
     }
 
