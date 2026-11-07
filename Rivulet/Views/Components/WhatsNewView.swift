@@ -167,7 +167,7 @@ struct WhatsNewView: View {
             "Shuffle libraries and shows, and delete episodes from long-press menus",
             "Specials now come after the last season. @priyanshuppal",
             "Greek is available. @Camthalion77",
-            "Updated AetherEngine to 7.58.0",
+            "Updated AetherEngine to 7.59.0",
             "Other small changes and fixes",
         ]),
         ("1.2.0 (122)", [
