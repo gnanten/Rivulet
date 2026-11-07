@@ -119,8 +119,8 @@ echo "Unsigned IPA ready:"
 echo "  $ROOT/$IPA"
 ls -lh "$IPA"
 echo
-echo "  (installing in 10 seconds)"
-sleep 10
+echo "  (installing in 2 seconds)"
+sleep 2
 ./install-sideload-ipa.sh
 echo "  (installed)"
 echo "==> Done!"

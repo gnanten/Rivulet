@@ -7,7 +7,7 @@
 #   ./install-sideload-ipa.sh path/to/Rivulet-unsigned.ipa
 #
 # Env overrides (optional):
-#   ATVLOADLY_URL=http://127.0.0.1:5533
+#   ATVLOADLY_URL=http://192.168.8.1:5533
 #   ATVLOADLY_ACCOUNT=courage.samg@gmail.com
 #   ATVLOADLY_DEVICE_ID=<id>               # required if more than one device
 #   ATVLOADLY_CUSTOM_NAME=Rivulet Sideload # optional home-screen name
@@ -19,7 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-ATVLOADLY_URL="${ATVLOADLY_URL:-http://127.0.0.1:5533}"
+ATVLOADLY_URL="${ATVLOADLY_URL:-http://192.168.8.1:5533}"
 ATVLOADLY_URL="${ATVLOADLY_URL%/}"
 IPA="${1:-build/sideload/ipa/Rivulet-unsigned.ipa}"
 WAIT="${ATVLOADLY_WAIT:-0}"
