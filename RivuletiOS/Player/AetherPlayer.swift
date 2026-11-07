@@ -69,6 +69,7 @@ final class AetherPlayer: ObservableObject {
             let isStruckThrough: Bool
             let fontName: String?
             let fontSize: Int?
+            var backgroundColor: UIColor?
         }
 
         struct TextPlacement: Hashable {
@@ -361,6 +362,7 @@ final class AetherPlayer: ObservableObject {
                 self.refreshPictureInPictureSource()
                 guard let avPlayer else {
                     self.observeVideoSize(of: nil)
+                    self.observeSeekableWindow(of: nil)
                     self.clearNativeMediaSelection()
                     return
                 }
@@ -368,6 +370,7 @@ final class AetherPlayer: ObservableObject {
                     .receive(on: DispatchQueue.main)
                     .sink { [weak self] item in
                         self?.observeVideoSize(of: item)
+                        self?.observeSeekableWindow(of: item)
                         self?.prepareNativeMediaSelection(for: item)
                     }
             }
@@ -406,12 +409,25 @@ final class AetherPlayer: ObservableObject {
         }
         if isLive {
             let clock = engine.clock
-            let window = LiveWindow(
+            var window = LiveWindow(
                 seekableRange: clock.seekableLiveRange,
                 edgeTime: clock.liveEdgeTime,
                 playhead: time,
                 isAtLiveEdge: clock.isAtLiveEdge
             )
+            // Direct HLS: the engine publishes an unbounded `0...edge` (AVPlayer
+            // clamps seeks itself), which would offer media the origin evicted
+            // long ago. The window is the AVPlayer item's own, on the same axis,
+            // and one no deeper than the live holdback is no window at all.
+            if engine.videoRoute == .remoteBypass {
+                if let remote = remoteLiveWindow, remote.isSeekable {
+                    window = LiveWindow(seekableRange: remote.lowerBound...remote.upperBound,
+                                        edgeTime: remote.upperBound, playhead: time,
+                                        isAtLiveEdge: remote.isAtLiveEdge(time))
+                } else {
+                    window = LiveWindow(seekableRange: nil, edgeTime: clock.liveEdgeTime, playhead: time, isAtLiveEdge: true)
+                }
+            }
             if window != liveWindow { liveWindow = window }
         }
         if let source = engine.softwarePiPSource {
@@ -678,7 +694,10 @@ final class AetherPlayer: ObservableObject {
     func seekLive(to sessionSeconds: Double) async {
         let window = liveWindow
         guard let range = window.seekableRange else { return }
-        let target = min(max(sessionSeconds, range.lowerBound), window.edgeTime)
+        // On direct HLS, clear of the oldest segment: the next playlist refresh
+        // may evict it before the seek lands.
+        let floor = remoteLiveWindow.map { $0.seekTarget($0.lowerBound) } ?? range.lowerBound
+        let target = min(max(sessionSeconds, floor), window.edgeTime)
         if window.edgeTime - target < 1 {
             await seekToLiveEdge()
         } else {
@@ -702,6 +721,34 @@ final class AetherPlayer: ObservableObject {
     func seekToLiveEdge() async {
         pendingSeekTarget = nil
         await engine.seekToLiveEdge()
+    }
+
+    // MARK: - Direct HLS rewind window
+
+    /// The AVPlayer item's seekable window, mirrored by KVO: the getter is a
+    /// sync XPC round trip to mediaserverd and this is read on every clock tick.
+    private var itemSeekableWindow: LiveSeekableWindow?
+    private var seekableObservation: AnyCancellable?
+
+    private var remoteLiveWindow: LiveSeekableWindow? {
+        engine.videoRoute == .remoteBypass ? itemSeekableWindow : nil
+    }
+
+    private func observeSeekableWindow(of item: AVPlayerItem?) {
+        guard let item else {
+            seekableObservation = nil
+            itemSeekableWindow = nil
+            return
+        }
+        seekableObservation = item.publisher(for: \.seekableTimeRanges)
+            .map { ranges in
+                LiveSeekableWindow(ranges: ranges.map {
+                    let range = $0.timeRangeValue
+                    return (start: range.start.seconds, duration: range.duration.seconds)
+                })
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] window in self?.itemSeekableWindow = window }
     }
 
     func selectAudioTrack(id: Int) {
@@ -742,6 +789,7 @@ final class AetherPlayer: ObservableObject {
         pendingSeekTarget = nil
         isStarting = false
         liveWindow = .idle
+        observeSeekableWindow(of: nil)
         rate = 1
         engine.pictureInPictureActive = false
         dropFrameExtractor()
@@ -1106,6 +1154,7 @@ final class AetherPlayer: ObservableObject {
         }
 
         let colorKey = NSAttributedString.Key(kCMTextMarkupAttribute_ForegroundColorARGB as String)
+        let backgroundKey = NSAttributedString.Key(kCMTextMarkupAttribute_CharacterBackgroundColorARGB as String)
         let boldKey = NSAttributedString.Key(kCMTextMarkupAttribute_BoldStyle as String)
         let italicKey = NSAttributedString.Key(kCMTextMarkupAttribute_ItalicStyle as String)
         let underlineKey = NSAttributedString.Key(kCMTextMarkupAttribute_UnderlineStyle as String)
@@ -1120,6 +1169,16 @@ final class AetherPlayer: ObservableObject {
             var color: UIColor?
             if let argb = attributes[colorKey] as? [NSNumber], argb.count == 4 {
                 color = UIColor(
+                    red: CGFloat(argb[1].doubleValue),
+                    green: CGFloat(argb[2].doubleValue),
+                    blue: CGFloat(argb[3].doubleValue),
+                    alpha: CGFloat(argb[0].doubleValue)
+                )
+            }
+
+            var backgroundColor: UIColor?
+            if let argb = attributes[backgroundKey] as? [NSNumber], argb.count == 4 {
+                backgroundColor = UIColor(
                     red: CGFloat(argb[1].doubleValue),
                     green: CGFloat(argb[2].doubleValue),
                     blue: CGFloat(argb[3].doubleValue),
@@ -1143,7 +1202,8 @@ final class AetherPlayer: ObservableObject {
                     isUnderlined: (attributes[underlineKey] as? NSNumber)?.boolValue ?? false,
                     isStruckThrough: false,
                     fontName: attributes[faceKey] as? String,
-                    fontSize: fontSize
+                    fontSize: fontSize,
+                    backgroundColor: backgroundColor
                 )
             )
         }
@@ -1228,7 +1288,8 @@ final class AetherPlayer: ObservableObject {
 private extension AetherPlayer.SubtitleCue.StyledRun {
     func replacingText(_ text: String) -> Self {
         Self(text: text, color: color, isBold: isBold, isItalic: isItalic, isUnderlined: isUnderlined,
-             isStruckThrough: isStruckThrough, fontName: fontName, fontSize: fontSize)
+             isStruckThrough: isStruckThrough, fontName: fontName, fontSize: fontSize,
+             backgroundColor: backgroundColor)
     }
 }
 

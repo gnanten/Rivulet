@@ -654,6 +654,13 @@ final class MediaDetailChromeView: UIView {
         }
         watchlist.onPrimaryAction = { [weak self] in self?.toggleWatchlist(item) }
 
+        // Movies and shows on a server that keeps favorites.
+        let favorite: FocusableActionButton? = FavoritesFeed.canFavorite(item) ? makeCircleButton(systemImage: "heart") : nil
+        favoriteButton = favorite
+        heroFavorite = item.userState.isFavorite
+        updateFavoriteIcon()
+        favorite?.onPrimaryAction = { [weak self] in self?.toggleFavorite(item) }
+
         let info = makeCircleButton(systemImage: "text.page")     // open details popup
         infoButton = info
         info.onPrimaryAction = { [weak self] in
@@ -662,12 +669,23 @@ final class MediaDetailChromeView: UIView {
         }
 
         actionButtonsStack.addArrangedSubview(play)
+        // A show shuffles every episode.
+        if item.kind == .show {
+            let shuffle = makeCircleButton(systemImage: "shuffle")
+            shuffle.accessibilityLabel = String(localized: "Shuffle")
+            shuffle.onPrimaryAction = { [weak self] in
+                guard let self, let host = self.hostViewController else { return }
+                ShufflePlayback.shuffle(show: item, from: host)
+            }
+            actionButtonsStack.addArrangedSubview(shuffle)
+        }
         actionButtonsStack.addArrangedSubview(watched)
         // Jellyfin has no watchlist: its add throws, so the button would flip
         // and snap back. Nil provider keeps today's behaviour.
         if MediaProviderRegistry.shared.provider(for: item.ref.providerID)?.supportsWatchlist ?? true {
             actionButtonsStack.addArrangedSubview(watchlist)
         }
+        if let favorite { actionButtonsStack.addArrangedSubview(favorite) }
         actionButtonsStack.addArrangedSubview(info)
         // An episode's Watched acts on the episode alone; the whole show is
         // marked from the show's own page, which this opens.
@@ -779,6 +797,8 @@ final class MediaDetailChromeView: UIView {
     private weak var versionsButton: FocusableActionButton?
     private var heroWatched = false
     private var heroOnWatchlist = false
+    private weak var favoriteButton: FocusableActionButton?
+    private var heroFavorite = false
 
     private func toggleWatched(_ item: MediaItem) {
         // The stored item, not the one captured at build: a refresh since then
@@ -833,6 +853,31 @@ final class MediaDetailChromeView: UIView {
                 }
             }
         }
+    }
+
+    private func toggleFavorite(_ item: MediaItem) {
+        heroFavorite.toggle()
+        updateFavoriteIcon()
+        let target = heroFavorite
+        Task { [weak self] in
+            do {
+                try await FavoritesFeed.set(target, for: item)
+                NotificationCenter.default.post(name: .plexDataNeedsRefresh, object: nil)
+            } catch {
+                // The server refused: put the heart back, as the watchlist does.
+                await MainActor.run {
+                    guard let self else { return }
+                    self.heroFavorite = !target
+                    self.updateFavoriteIcon()
+                }
+            }
+        }
+    }
+
+    private func updateFavoriteIcon() {
+        Self.setCircleIcon(favoriteButton, heroFavorite ? "heart.fill" : "heart")
+        favoriteButton?.accessibilityLabel = heroFavorite
+            ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites")
     }
 
     // Distinct active glyphs so watched ≠ watchlist when both are on.
