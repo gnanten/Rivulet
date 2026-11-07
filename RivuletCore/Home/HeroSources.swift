@@ -37,6 +37,13 @@ nonisolated enum HeroSources {
     static var isTrendingOnly: Bool { sources == [.trending] && HomePlaylistPins.pins(in: .hero).isEmpty }
 
     static func set(_ source: Source, on: Bool) {
+        let defaults = UserDefaults.standard
+        // First explicit choice after the single-value era: replace the migrated pick
+        // instead of stacking (Watchlist + Trending was the common upgrade footgun).
+        if on, defaults.object(forKey: key) == nil {
+            write([source])
+            return
+        }
         var current = sources
         if on { current.insert(source) } else { current.remove(source) }
         write(current)
@@ -49,7 +56,19 @@ nonisolated enum HeroSources {
     }
 
     private static func write(_ sources: Set<Source>) {
-        UserDefaults.standard.set(Source.allCases.filter(sources.contains).map(\.rawValue), forKey: key)
+        let defaults = UserDefaults.standard
+        defaults.set(Source.allCases.filter(sources.contains).map(\.rawValue), forKey: key)
+        // Keep the pre-mix keys honest so iCloud / a profile without homeHeroSources
+        // cannot revive an old single pick (e.g. Watchlist) after Trending was chosen.
+        if sources.count == 1, let only = sources.first {
+            defaults.set(only.rawValue, forKey: "homeHeroContent")
+            defaults.set(true, forKey: "showHomeHero")
+        } else if sources.isEmpty && HomePlaylistPins.pins(in: .hero).isEmpty {
+            defaults.set(false, forKey: "showHomeHero")
+        } else {
+            defaults.set(true, forKey: "showHomeHero")
+            defaults.removeObject(forKey: "homeHeroContent")
+        }
         NotificationCenter.default.post(name: changedNotification, object: nil)
     }
 }

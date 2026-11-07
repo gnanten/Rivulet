@@ -59,7 +59,26 @@ final class HeroSourcesTests: XCTestCase {
         XCTAssertFalse(HeroSources.isEnabled)
     }
 
+    /// Turning a source on before homeHeroSources exists replaces the migrated pick, so
+    /// Watchlist + Trending does not stack on upgrade.
+    func test_firstChoice_afterMigration_replacesLegacyWatchlist() {
+        UserDefaults.standard.set("watchlist", forKey: "homeHeroContent")
+        XCTAssertEqual(HeroSources.sources, [.watchlist])
+
+        HeroSources.set(.trending, on: true)
+        XCTAssertEqual(HeroSources.sources, [.trending])
+        XCTAssertTrue(HeroSources.isTrendingOnly)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "homeHeroContent"), "trending")
+
+        HeroSources.set(.watchlist, on: true)
+        XCTAssertEqual(HeroSources.sources, [.trending, .watchlist])
+        XCTAssertNil(UserDefaults.standard.string(forKey: "homeHeroContent"),
+                     "a mix clears the legacy single-value key")
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "showHomeHero"))
+    }
+
     func test_sourcesMix_andTheLastOneOffTurnsTheHeroOff() {
+        HeroSources.set(.trending, on: true)
         HeroSources.set(.favoriteMovies, on: true)
         XCTAssertEqual(HeroSources.sources, [.trending, .favoriteMovies])
         XCTAssertFalse(HeroSources.isTrendingOnly)
@@ -68,17 +87,21 @@ final class HeroSourcesTests: XCTestCase {
         HeroSources.set(.favoriteMovies, on: false)
         XCTAssertEqual(HeroSources.sources, [])
         XCTAssertFalse(HeroSources.isEnabled)
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "showHomeHero"))
     }
 
     func test_aHeroPlaylistAloneKeepsTheHeroOn() {
-        HeroSources.set(.trending, on: false)
         HomePlaylistPins.pin(.init(providerID: "jellyfin:test", playlistID: "p1", title: "Classics"), in: .hero)
+        HeroSources.set(.trending, on: false)
         XCTAssertTrue(HeroSources.isEnabled)
         XCTAssertFalse(HeroSources.isTrendingOnly)
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "showHomeHero"),
+                      "empty sources with a hero playlist keep the legacy hero flag on")
     }
 
     /// A choice made in one profile leaves the others on the default.
     func test_choice_isPerProfile() {
+        HeroSources.set(.trending, on: true)
         HeroSources.set(.watchlist, on: true)
         UserDefaults.standard.set(profileB, forKey: "selectedPlexUserId")
         XCTAssertEqual(HeroSources.sources, [.trending])
@@ -99,6 +122,8 @@ final class HeroSourcesTests: XCTestCase {
         XCTAssertEqual(HeroSources.sources, [.trending])
         XCTAssertEqual(HomePlaylistPins.pins(in: .hero), [])
         XCTAssertTrue(HeroSources.isTrendingOnly)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "homeHeroContent"), "trending")
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "showHomeHero"))
     }
 
     /// A hero playlist change reaches whatever watches the hero.
