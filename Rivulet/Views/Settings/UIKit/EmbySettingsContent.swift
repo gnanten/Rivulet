@@ -40,10 +40,20 @@ extension SettingsContent {
                 }), isBusy: { ServerDataStore.shared.isLoading }),
                 SettingsRowItem(id: "embySignOut", title: "Sign Out",
                                 kind: .action(destructive: true, handler: { vc in
-                    Task { @MainActor in
-                        await EmbySession.signOut()
-                        addSourceDraft = AddSourceDraft()
-                        (vc as? SettingsPageViewController)?.reloadRows()
+                    func signOut(_ scope: SignOutScope?) {
+                        Task { @MainActor in
+                            await EmbySession.signOut(scope: scope)
+                            addSourceDraft = AddSourceDraft()
+                            (vc as? SettingsPageViewController)?.reloadRows()
+                        }
+                    }
+                    if CloudSync.shared.isSynced(accountID: account.providerID) {
+                        presentSignOutChoice(
+                            on: vc, title: String(localized: "Sign Out of Emby?"),
+                            message: String(localized: "Your Emby sign-in is shared through iCloud. Sign out of this device only, or of every device?"),
+                            thisDevice: { signOut(.thisDevice) }, everywhere: { signOut(.everywhere) })
+                    } else {
+                        signOut(nil)
                     }
                 }))
             ]
@@ -96,29 +106,8 @@ extension SettingsContent {
                 _ = try await EmbySession.signIn(serverURL: url, username: username, password: draft.password)
                 finish(page, draft: draft)
             } catch {
-                fail(draft, page: page, title: String(localized: "Couldn't Sign In"), message: embyFailureCopy(for: error))
+                fail(draft, page: page, title: String(localized: "Couldn't Sign In"), message: EmbySession.failureMessage(for: error))
             }
-        }
-    }
-
-    /// The server's own text for a lockout, a disabled account or a blocked device: only English says which.
-    static func embyFailureCopy(for error: Error) -> String {
-        let name = embyName
-        let floor = EmbySession.minimumVersion
-        switch error {
-        case EmbySignInError.notEmby:
-            return String(localized: "That address isn't an \(name) server. Check the port. A Jellyfin server signs in under Jellyfin Server.")
-        case EmbySignInError.serverTooOld:
-            return String(localized: "Rivulet needs \(name) Server \(floor.major).\(floor.minor).\(floor.patch) or newer.")
-        case EmbySignInError.untrustedCertificate:
-            return String(localized: "This server's HTTPS certificate isn't trusted. Try its http:// address.")
-        case EmbySignInError.invalidCredentials, MediaProviderError.unauthorized:
-            return String(localized: "\(name) didn't accept that username and password.")
-        case EmbySignInError.lockedOut(let message), EmbySignInError.accountDisabled(let message),
-             EmbySignInError.notAllowed(let message):
-            return message
-        default:
-            return String(localized: "Couldn't reach that server. Check the address and port.")
         }
     }
 }

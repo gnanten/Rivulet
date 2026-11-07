@@ -65,14 +65,20 @@ class LiveTVDataStore: ObservableObject {
     /// Channels favorited in Rivulet, from any source, in the viewer's order.
     @Published private(set) var favoriteIds: [String] = [] {
         didSet {
-            saveFavorites()
+            if !isLoadingFavorites { saveFavorites() }
         }
     }
+
+    /// Reading the saved lists must not write them: an empty default would look like a choice to iCloud.
+    private var isLoadingFavorites = false
 
     /// Source favorites (Plex account favorites) removed in Rivulet. Hidden
     /// here only; the source's own list is left alone.
     @Published private(set) var unfavoritedIds: Set<String> = [] {
-        didSet { userDefaults.set(Array(unfavoritedIds), forKey: unfavoritedKey) }
+        didSet {
+            guard !isLoadingFavorites else { return }
+            userDefaults.set(unfavoritedIds.sorted(), forKey: unfavoritedKey)
+        }
     }
 
     /// Loading states
@@ -136,13 +142,13 @@ class LiveTVDataStore: ObservableObject {
     /// switching in while a foreground notification lands) run ONE refresh.
     private var staleRefreshTask: Task<Void, Never>?
 
-    private let userDefaults = UserDefaults.standard
+    let userDefaults = UserDefaults.standard
     private let favoritesKey = "liveTVFavoriteChannelIds"
     private let unfavoritedKey = "liveTVUnfavoritedChannelIds"
     private let recentsKey = "liveTVRecentChannelIds"
     private let eventSlotsKey = "liveTVEventSlotChannelIds"
     private let viewingsKey = "liveTVViewings"
-    private let sourcesKey = "liveTVSourceConfigurations"
+    let sourcesKey = "liveTVSourceConfigurations"
 
     // MARK: - Source Configuration (Persistable)
 
@@ -414,8 +420,15 @@ class LiveTVDataStore: ObservableObject {
         reloadSources()
     }
 
-    /// Remove a source by ID
-    func removeSource(id: String) async {
+    /// Removes a source here. Without a scope, other devices keep it and it stays out of this one.
+    func removeSource(id: String, scope: SignOutScope? = nil) async {
+        // First: the local removal ends in network probes, and a sync that runs before this is recorded would bring the source back.
+        CloudSync.shared.signedOut(accountID: Self.syncID(forSource: id), identity: nil, scope: scope ?? .thisDevice)
+        await removeSourceLocally(id: id)
+    }
+
+    /// Removes a source without telling iCloud (another device removed it).
+    func removeSourceLocally(id: String) async {
         withheldIPTVProviders.removeValue(forKey: id)
         KeychainHelper.delete(Self.apiTokenKey(sourceId: id))
         KeychainHelper.delete(Self.playlistURLKey(sourceId: id))
@@ -713,6 +726,7 @@ class LiveTVDataStore: ObservableObject {
         if let data = try? JSONEncoder().encode(configs) {
             userDefaults.set(data, forKey: sourcesKey)
         }
+        CloudSync.shared.accountsChanged()
     }
 
     /// Keychain account holding a source's Dispatcharr API key.
@@ -1027,7 +1041,13 @@ class LiveTVDataStore: ObservableObject {
 
     // MARK: - EPG Loading
 
-    /// Load EPG for the specified time range
+    /// How far before now a full EPG load keeps programmes: the live player's
+    /// timeline splits a stream's rewind window at the programmes it reaches
+    /// into, and those have ended (`LiveTimelineLayout.maximumLookback`).
+    static let epgLookback: TimeInterval = 4 * 3_600
+
+    /// Load EPG for the specified time range. The provider fetch also reaches
+    /// back `epgLookback`; the guide drops whatever ended before its timeline.
     func loadEPG(startDate: Date = Date(), hours: Int = 24) async {
         guard !providers.isEmpty, !channels.isEmpty else {
             return
@@ -1087,7 +1107,7 @@ class LiveTVDataStore: ObservableObject {
                         do {
                             let epg = try await provider.fetchEPG(
                                 for: sourceChannels,
-                                startDate: startDate,
+                                startDate: min(startDate, Date().addingTimeInterval(-Self.epgLookback)),
                                 endDate: endDate
                             )
                             return (sourceId, .success(epg))
@@ -1577,15 +1597,21 @@ class LiveTVDataStore: ObservableObject {
         userDefaults.set(Array(eventSlotIds), forKey: eventSlotsKey)
     }
 
-    private func loadFavorites() {
-        if let saved = userDefaults.array(forKey: favoritesKey) as? [String] {
-            favoriteIds = saved
-        }
+    func loadFavorites() {
+        isLoadingFavorites = true
+        defer { isLoadingFavorites = false }
+        favoriteIds = userDefaults.stringArray(forKey: favoritesKey) ?? []
         unfavoritedIds = Set(userDefaults.stringArray(forKey: unfavoritedKey) ?? [])
     }
 
     private func saveFavorites() {
         userDefaults.set(favoriteIds, forKey: favoritesKey)
+    }
+
+    /// iCloud changed these keys under us: reread what is cached.
+    func syncedPreferencesChanged(_ keys: Set<String>) {
+        if keys.contains(favoritesKey) || keys.contains(unfavoritedKey) { loadFavorites() }
+        if keys.contains(Self.hiddenPlexServersKey) { plexContentTokenChanged() }
     }
 
     // MARK: - Recently watched

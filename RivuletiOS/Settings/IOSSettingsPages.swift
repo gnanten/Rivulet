@@ -3,40 +3,12 @@
 
 import SwiftUI
 
-/// Account > Home.
-struct IOSHomeSettingsView: View {
-    /// Same keys as the tvOS Home > Hero setting.
-    @AppStorage("showHomeHero") private var showHero = true
-    @AppStorage(heroContentKey) private var heroContent = "trending"
-
-    static let heroContentKey = "homeHeroContent"
-    private static let heroChoices = [("off", String(localized: "Off")), ("trending", String(localized: "Trending")),
-                                      ("continueWatching", String(localized: "Continue Watching")),
-                                      ("recentlyAdded", String(localized: "Recently Added")), ("watchlist", String(localized: "Watchlist"))]
-
-    var body: some View {
-        Form {
-            Section {
-                Picker("Hero", selection: Binding(
-                    get: { showHero ? heroContent : "off" },
-                    set: { choice in
-                        showHero = choice != "off"
-                        if choice != "off" { heroContent = choice }
-                    }
-                )) {
-                    ForEach(Self.heroChoices, id: \.0) { Text($0.1).tag($0.0) }
-                }
-            } footer: {
-                Text("What the top of Home features. Trending shows what's popular this week that's in your library. A list with nothing in it shows Trending.")
-            }
-        }
-        .navigationTitle("Home")
-    }
-}
-
 /// Account > Library.
 struct IOSLibrarySettingsView: View {
+    @EnvironmentObject private var browse: IOSBrowseStore
     @AppStorage(IOSLibrarySettingsView.showPlaylistsKey) private var showPlaylists = true
+    /// The tvOS sidebar's key, so sync and a shared profile agree.
+    @AppStorage("showFavoritesTab") private var showFavorites = false
 
     static let showPlaylistsKey = "iosShowPlaylists"
 
@@ -47,6 +19,13 @@ struct IOSLibrarySettingsView: View {
             } footer: {
                 Text("Lists each server's video playlists under Library.")
             }
+            if browse.offersFavorites {
+                Section {
+                    Toggle("Favorites", isOn: $showFavorites)
+                } footer: {
+                    Text("Lists your favorite movies and shows from every server under Library.")
+                }
+            }
         }
         .navigationTitle("Library")
     }
@@ -54,8 +33,8 @@ struct IOSLibrarySettingsView: View {
 
 /// Account > Playback: streaming quality, skip buttons, automatic skips and the markers they use.
 struct IOSPlaybackSettingsView: View {
-    @AppStorage("playerSkipBackwardSeconds") private var skipBackwardSeconds = 10
-    @AppStorage("playerSkipForwardSeconds") private var skipForwardSeconds = 30
+    @AppStorage(SkipLengthKeys.back) private var skipBackwardSeconds = 10
+    @AppStorage(SkipLengthKeys.forward) private var skipForwardSeconds = 30
     /// Observed so the skip pickers redraw; read and written through `MarkerSkipMode`.
     @AppStorage("autoSkipIntro") private var autoSkipIntro = false
     @AppStorage("autoSkipRecap") private var autoSkipRecap = false
@@ -88,10 +67,10 @@ struct IOSPlaybackSettingsView: View {
 
             Section {
                 Picker("Skip Back", selection: $skipBackwardSeconds) {
-                    ForEach([5, 10, 15, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                    ForEach(SkipLengthKeys.options, id: \.self) { Text("\($0) seconds").tag($0) }
                 }
                 Picker("Skip Forward", selection: $skipForwardSeconds) {
-                    ForEach([10, 15, 30, 60], id: \.self) { Text("\($0) seconds").tag($0) }
+                    ForEach(SkipLengthKeys.options, id: \.self) { Text("\($0) seconds").tag($0) }
                 }
             } header: {
                 Text("Skip Buttons")
@@ -107,7 +86,7 @@ struct IOSPlaybackSettingsView: View {
             } header: {
                 Text("Skip Markers")
             } footer: {
-                Text("Button shows a skip button, Automatic skips on its own, and Off shows nothing.")
+                Text("Manual shows a skip button, Automatic skips on its own, and Off shows nothing.")
             }
 
             Section {
@@ -193,7 +172,10 @@ struct IOSDownloadSettingsView: View {
                     ForEach(IOSDownloadCenter.qualityChoices, id: \.self) { Text($0.label).tag($0) }
                 }
             } footer: {
-                Text("Original saves the file as it is on the server. Smaller sizes are converted by the server first, and a size at or above the file's own downloads the Original.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Original saves the file as it is on the server. Smaller sizes are converted by the server first, and a size at or above the file's own downloads the Original.")
+                    Text("Only Plex converts. Jellyfin and Emby always download the original file.")
+                }
             }
 
             Section {

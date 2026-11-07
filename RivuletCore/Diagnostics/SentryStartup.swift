@@ -15,10 +15,12 @@ import Sentry
 public enum SentryStartup {
     /// Which app sent the event (both report into one project). Passed in by the
     /// caller: no `#if os` here, and `UIDevice.systemName` splits iPads across
-    /// "iOS" and "iPadOS".
+    /// "iOS" and "iPadOS". `macOS` is the iOS app running on a Mac (Designed for
+    /// iPad), so Mac-only runtime failures can be told apart from iPad ones.
     public enum Platform: String {
         case tvOS
         case iOS
+        case macOS
     }
 
     /// MUST be main-actor isolated: `SentrySDK.start` builds the SDK's
@@ -68,12 +70,15 @@ public enum SentryStartup {
             // <unknown> in-app frames mean missing dSYMs for that build.
             options.enableAppHangTracking = true
             options.appHangTimeoutInterval = 2
-            // Also report non-fully-blocking hangs (partial main-thread
-            // stalls), not just fully-blocked ones. Defaults true in 9.x;
-            // set explicitly so a future SDK default flip can't silence them.
-            options.enableReportNonFullyBlockingAppHangs = true
+            // Partial stalls were a third of all hang events and never led to a fix.
+            options.enableReportNonFullyBlockingAppHangs = false
 
             options.beforeSend = { event in
+                // Two non-fatal hangs per launch; "Fatal App Hang" (watchdog kills) always goes.
+                if event.exceptions?.first?.type?.hasPrefix("App Hang") == true,
+                   !SentryBridge.admit("app-hang", limit: 2) {
+                    return nil
+                }
                 // Drop cancelled URL request errors — these are normal when
                 // navigating away. "CancellationError" is listed explicitly:
                 // Swift's structured-concurrency error stringifies as

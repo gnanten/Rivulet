@@ -35,6 +35,7 @@ enum SettingsDescriptorStore {
         // is what the panel wants to explain anyway.
         if id.hasPrefix("homeRow_") { return descriptors["homeRowItem"] }
         if id.hasPrefix("pinnedCollection_") { return descriptors["pinnedCollection"] }
+        if id.hasPrefix("homePlaylist_") { return descriptors["homePlaylist"] }
         if id.hasPrefix("fav_") { return descriptors["liveTVFavoriteRow"] }
         if id.hasPrefix("cfw_"), id != "cfw_add" { return descriptors["customWordRow"] }
         if id.hasPrefix("sq_") { return descriptors["streamingQualityOption"] }
@@ -57,7 +58,7 @@ enum SettingsDescriptorStore {
         // MARK: Root Categories
         "cat_appearance": SettingDescriptor(
             icon: "paintbrush.fill",
-            description: "Customize how Rivulet looks — display size, hero banners, sidebar libraries, and content discovery rows."
+            description: "Customize how Rivulet looks: the sidebar, Top Shelf, hero banners, Home and library rows, and ratings."
         ),
         "cat_playback": SettingDescriptor(
             icon: "play.fill",
@@ -104,23 +105,39 @@ enum SettingsDescriptorStore {
 
         "homeRows": SettingDescriptor(
             icon: "rectangle.grid.1x2",
-            description: "Turn Home rows off on this Apple TV. Rows come from your Plex account; a library shows here once it is pinned to Home in Plex."
+            description: "Choose what appears on Home and in what order."
         ),
-        "showAllHomeRows": SettingDescriptor(
-            icon: "eye",
-            description: "Show every row your Plex account puts on Home again."
+        "resetHomeRows": SettingDescriptor(
+            icon: "arrow.counterclockwise",
+            description: "Put every Home row back in its original order and show the ones you hid. Favorites and playlists are turned off; pinned collections stay."
         ),
         "homeRowItem": SettingDescriptor(
             icon: "rectangle.grid.1x2",
-            description: "Turn this row off to hide it on this Apple TV. Your Plex account is unchanged, so the row keeps showing in the Plex app and on your other devices."
+            description: "Click to show or hide this row on Home. Press and hold to move it up or down."
         ),
         "pinnedCollection": SettingDescriptor(
             icon: "pin",
             description: "A collection you pinned from its tile menu. Hold Select to reorder, or Select to unpin it."
         ),
+        "homePlaylist": SettingDescriptor(
+            icon: "music.note.list",
+            description: "Click to show or hide this playlist on Home. Once it is shown, press and hold to move it up or down."
+        ),
+        "homeFavoriteMovies": SettingDescriptor(
+            icon: "star",
+            description: "Click to show or hide your favorite movies on Home. Once they are shown, press and hold to move them up or down."
+        ),
+        "homeFavoriteShows": SettingDescriptor(
+            icon: "star",
+            description: "Click to show or hide your favorite TV shows on Home. Once they are shown, press and hold to move them up or down."
+        ),
+        "resetHomeHero": SettingDescriptor(
+            icon: "arrow.counterclockwise",
+            description: "Put the hero back to Trending only, with no playlists."
+        ),
         "homeHero": SettingDescriptor(
             icon: "sparkles.rectangle.stack",
-            description: "The large banner at the top of the Home screen. Trending features popular titles from your library. Or pick one of your Home lists: Continue Watching, Recently Added or your Watchlist."
+            description: "Choose what the hero shows. Pick more than one to mix them. Turn all off to hide the hero."
         ),
         "topShelfStyle": SettingDescriptor(
             icon: "tv",
@@ -286,6 +303,10 @@ enum SettingsDescriptorStore {
         "cache": SettingDescriptor(
             icon: "internaldrive",
             description: "View storage usage and manage cached images, metadata, and other temporary data."
+        ),
+        "iCloudSync": SettingDescriptor(
+            icon: "icloud",
+            description: "Keeps your settings, servers and Live TV sources the same on every Apple TV, iPhone and iPad signed in to your Apple Account. Sign-ins are stored encrypted in iCloud. Watch progress comes from your servers and is not part of this."
         ),
         "forceRefresh": SettingDescriptor(
             icon: "arrow.clockwise",

@@ -31,9 +31,11 @@ struct TVSidebarView: View {
     @StateObject private var profileManager = PlexUserProfileManager.shared
     @StateObject private var nestedNavState = NestedNavigationState()
     @StateObject private var deepLinkHandler = DeepLinkHandler.shared
+    @StateObject private var nowPlayingFeed = SidebarNowPlayingFeed()
     @AppStorage("combineLiveTVSources") private var combineLiveTVSources = true
     @AppStorage("showDiscoverTab") private var showDiscoverTab = true
     @AppStorage("showWatchlistTab") private var showWatchlistTab = true
+    @AppStorage("showFavoritesTab") private var showFavoritesTab = false
     @State private var selectedTab: SidebarTab = .home
     @State private var showProfilePicker = false
     /// A profile was entered through the picker; any other close re-presents it.
@@ -63,13 +65,23 @@ struct TVSidebarView: View {
         authManager.hasCredentials || serverStore.isSignedIn
     }
 
+    /// Some signed-in server keeps favorites. Reads `serverStore.sources` so a sign-in or
+    /// sign-out re-renders the sidebar.
+    private var hasFavoritesServer: Bool {
+        _ = serverStore.sources
+        return PersonalHomeRows.offersFavorites
+    }
+
     /// Signing out of everything brings the setup landing back.
     private var hasAnySource: Bool {
         isSignedInToAnyServer || liveTVDataStore.sources.contains { !$0.sourceType.followsServer }
     }
 
+    /// `serverStore` is observed, so a Jellyfin or Emby sign-in re-renders the profile row.
     private var profileName: String {
-        profileManager.selectedUser?.displayName ?? authManager.username ?? String(localized: "Account")
+        ShellSidebarModel.profileName(plexProfile: profileManager.selectedUser?.displayName,
+                                             plexUser: authManager.username,
+                                             otherServerUsers: AccountName.otherServerUsers)
     }
 
     private var isMusicLibrarySelected: Bool {
@@ -107,13 +119,15 @@ struct TVSidebarView: View {
             // Both need a Plex account; a Jellyfin-only setup has neither (#478).
             showDiscover: showDiscoverTab && authManager.hasCredentials,
             showWatchlist: showWatchlistTab && authManager.hasCredentials,
+            showFavorites: showFavoritesTab && hasFavoritesServer,
             order: librarySettings.libraryOrder,
             hiddenKeys: librarySettings.hiddenLibraryKeys,
             profileName: profileName,
             profileAvatar: profileManager.selectedUser?.thumb.flatMap { URL(string: $0) },
             canSwitchProfile: profileManager.hasMultipleProfiles,
             hasMediaServer: isSignedInToAnyServer,
-            playlistServers: PlaylistServer.current(visiblePlaylistProviders))
+            playlistServers: PlaylistServer.current(visiblePlaylistProviders),
+            nowPlaying: nowPlayingFeed.track)
     }
 
     /// Servers that get a Playlists row: those with playlists, less the rows Settings hides.
@@ -215,6 +229,11 @@ struct TVSidebarView: View {
         }
         .onChange(of: showWatchlistTab) { _, shown in
             if !shown && selectedTab == .watchlist {
+                selectedTab = .home
+            }
+        }
+        .onChange(of: showFavoritesTab && hasFavoritesServer) { _, shown in
+            if !shown && selectedTab == .favorites {
                 selectedTab = .home
             }
         }
@@ -610,6 +629,8 @@ struct TVSidebarView: View {
             return PlexHomeViewController(mode: .discover)
         case .watchlist:
             return PlexHomeViewController(mode: .watchlist)
+        case .favorites:
+            return PlexHomeViewController(mode: .favorites)
         case .playlists(let providerID):
             return PlexHomeViewController(mode: .playlists(providerID: providerID))
         case .search:
@@ -688,7 +709,7 @@ struct TVSidebarView: View {
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
                 Color.clear
-            case .watchlist, .playlists:
+            case .watchlist, .favorites, .playlists, .nowPlaying:
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
                 Color.clear
